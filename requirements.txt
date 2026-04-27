@@ -4,3 +4,4 @@ torch
 sentencepiece
 pillow
 pytesseract
+easyocr
