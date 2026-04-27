@@ -1,13 +1,9 @@
 import streamlit as st
 from transformers import pipeline
-import pytesseract
+import easyocr
 from PIL import Image
 import re
-
-# ---------------------------------------------------
-# TESSERACT PATH (WINDOWS)
-# ---------------------------------------------------
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+import numpy as np
 
 # ---------------------------------------------------
 # PAGE CONFIG
@@ -20,38 +16,19 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------
-# CUSTOM UI STYLE
+# CUSTOM STYLE
 # ---------------------------------------------------
 st.markdown("""
 <style>
-.main {
-    padding-top: 1rem;
-}
 .block-container {
     padding-top: 1rem;
     padding-bottom: 2rem;
-}
-.metric-card {
-    background: #111827;
-    padding: 18px;
-    border-radius: 14px;
-    border: 1px solid #374151;
-}
-.result-box {
-    padding: 16px;
-    border-radius: 14px;
-    border: 1px solid #e5e7eb;
-    background: #f8fafc;
-}
-.small-note {
-    font-size: 13px;
-    color: #6b7280;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------
-# LOAD MODEL
+# LOAD AI MODEL
 # ---------------------------------------------------
 @st.cache_resource
 def load_model():
@@ -60,7 +37,15 @@ def load_model():
         model="typeform/distilbert-base-uncased-mnli"
     )
 
+# ---------------------------------------------------
+# LOAD OCR MODEL
+# ---------------------------------------------------
+@st.cache_resource
+def load_reader():
+    return easyocr.Reader(['en'], gpu=False)
+
 classifier = load_model()
+reader = load_reader()
 
 # ---------------------------------------------------
 # HELPERS
@@ -113,10 +98,7 @@ def risk_signals(text):
         score += 20
         reasons.append("Contains suspicious link")
 
-    if score > 100:
-        score = 100
-
-    return score, reasons, scam_type
+    return min(score, 100), reasons, scam_type
 
 def ai_check(text):
     labels = [
@@ -125,24 +107,27 @@ def ai_check(text):
         "normal safe message",
         "spam advertisement"
     ]
+
     result = classifier(text, labels)
     return result["labels"][0], float(result["scores"][0])
 
 def final_score(rule_score, ai_label, ai_conf):
     score = rule_score
+
     if ai_label in ["fraudulent scam message", "phishing attempt"]:
         score += int(ai_conf * 20)
+
     return min(score, 100)
 
-def level(score):
+def risk_level(score):
     if score >= 75:
         return "High Risk"
     elif score >= 45:
         return "Medium Risk"
     return "Low Risk"
 
-def advice(risk):
-    if risk == "High Risk":
+def advice(level):
+    if level == "High Risk":
         return [
             "Do NOT click any links.",
             "Do NOT share OTP or passwords.",
@@ -150,16 +135,16 @@ def advice(risk):
             "Use official websites only.",
             "Change passwords if already clicked."
         ]
-    elif risk == "Medium Risk":
+    elif level == "Medium Risk":
         return [
-            "Verify sender identity.",
+            "Verify sender identity first.",
             "Avoid sharing personal details.",
             "Inspect links carefully."
         ]
     else:
         return [
             "No major threat detected.",
-            "Stay cautious with unknown senders."
+            "Stay cautious with unknown contacts."
         ]
 
 # ---------------------------------------------------
@@ -169,7 +154,7 @@ with st.sidebar:
     st.title("🛡️ TrustLens AI")
     st.caption("Digital Safety Copilot")
 
-    st.markdown("### Protected Against")
+    st.markdown("### Protection Areas")
     st.write("• Phishing")
     st.write("• Fake Bank Alerts")
     st.write("• OTP Fraud")
@@ -178,16 +163,15 @@ with st.sidebar:
     st.write("• Investment Fraud")
 
     st.markdown("---")
-    st.markdown("### Why It Matters")
-    st.caption("Millions lose money to digital scams every year. TrustLens helps detect threats instantly.")
+    st.caption("AI-powered scam detection using OCR + NLP.")
 
 # ---------------------------------------------------
-# HERO SECTION
+# HEADER
 # ---------------------------------------------------
 st.title("🛡️ TrustLens AI")
 st.subheader("Detect scams in seconds. Stay safe online.")
 
-st.info("Paste suspicious text or upload a screenshot to get instant AI-powered fraud analysis.")
+st.info("Paste suspicious text or upload screenshot for AI analysis.")
 
 # ---------------------------------------------------
 # INPUT SECTION
@@ -197,8 +181,7 @@ left, right = st.columns(2)
 with left:
     user_text = st.text_area(
         "Paste suspicious SMS / Email / WhatsApp message",
-        height=260,
-        placeholder="Example: Your bank account is suspended. Verify now..."
+        height=260
     )
 
 with right:
@@ -208,13 +191,18 @@ with right:
     )
 
 # ---------------------------------------------------
-# OCR
+# OCR SECTION
 # ---------------------------------------------------
 if uploaded_file is not None:
     image = Image.open(uploaded_file)
     st.image(image, caption="Uploaded Screenshot", use_container_width=True)
 
-    extracted_text = pytesseract.image_to_string(image)
+    img_array = np.array(image)
+
+    with st.spinner("Reading text from image..."):
+        results = reader.readtext(img_array)
+
+    extracted_text = " ".join([item[1] for item in results])
 
     st.markdown("### Extracted Text")
     st.code(extracted_text)
@@ -223,12 +211,13 @@ if uploaded_file is not None:
         user_text = extracted_text
 
 # ---------------------------------------------------
-# ANALYZE BUTTON
+# ANALYZE
 # ---------------------------------------------------
 if st.button("🚀 Scan for Threats", use_container_width=True):
 
     if user_text.strip() == "":
         st.warning("Please enter text or upload screenshot.")
+
     else:
         rule_score, reasons, scam_type = risk_signals(user_text)
 
@@ -240,37 +229,28 @@ if st.button("🚀 Scan for Threats", use_container_width=True):
             ai_conf = 0.95
 
         total = final_score(rule_score, ai_label, ai_conf)
-        risk = level(total)
+        level = risk_level(total)
 
-        # ----------------------------
-        # METRICS
-        # ----------------------------
         a, b, c = st.columns(3)
 
         with a:
             st.metric("Threat Score", f"{total}/100")
 
         with b:
-            st.metric("Risk Level", risk)
+            st.metric("Risk Level", level)
 
         with c:
             st.metric("Detected Type", scam_type)
 
         st.progress(total)
 
-        # ----------------------------
-        # RESULT BANNER
-        # ----------------------------
-        if risk == "High Risk":
+        if level == "High Risk":
             st.error("🚨 Dangerous message likely scam")
-        elif risk == "Medium Risk":
+        elif level == "Medium Risk":
             st.warning("⚠️ Suspicious message detected")
         else:
             st.success("✅ Lower risk message")
 
-        # ----------------------------
-        # WHY FLAGGED
-        # ----------------------------
         st.markdown("### Why It Was Flagged")
         if reasons:
             for r in reasons:
@@ -278,45 +258,32 @@ if st.button("🚀 Scan for Threats", use_container_width=True):
         else:
             st.write("• No strong fraud indicators found.")
 
-        # ----------------------------
-        # LINKS FOUND
-        # ----------------------------
         links = extract_links(user_text)
         if links:
             st.markdown("### Links Found")
             for link in links:
                 st.code(link)
 
-        # ----------------------------
-        # RECOMMENDED ACTION
-        # ----------------------------
         st.markdown("### Recommended Action")
-        for tip in advice(risk):
+        for tip in advice(level):
             st.write("•", tip)
 
-        # ----------------------------
-        # AI DECISION
-        # ----------------------------
         st.markdown("### AI Insight")
-        st.caption(f"Model classified this as: {ai_label} ({round(ai_conf*100)}% confidence)")
+        st.caption(f"Model result: {ai_label} ({round(ai_conf*100)}% confidence)")
 
 # ---------------------------------------------------
-# SAMPLE TEST CASES
+# SAMPLE TESTS
 # ---------------------------------------------------
 st.markdown("---")
 st.markdown("### Try Demo Messages")
 
-demo1 = "URGENT! Your bank account is suspended. Verify now at http://bank-login-help.com"
-demo2 = "Congratulations! You are selected for a work from home job. Pay ₹999 registration fee now."
-demo3 = "Hi Karan, meeting confirmed for tomorrow at 3 PM."
-
-st.code(demo1)
-st.code(demo2)
-st.code(demo3)
+st.code("URGENT! Your bank account is suspended. Verify now at http://bank-login-help.com")
+st.code("Congratulations! You are selected for work from home job. Pay ₹999 registration fee now.")
+st.code("Hi Karan, meeting confirmed for tomorrow at 3 PM.")
 
 # ---------------------------------------------------
 # FOOTER
 # ---------------------------------------------------
 st.markdown("---")
-st.caption("TrustLens AI | Final Hackathon Edition")
-st.caption("Built with Streamlit + OCR + NLP + Hybrid Fraud Detection")
+st.caption("TrustLens AI | Hosted Final Edition")
+st.caption("Built with Streamlit + EasyOCR + NLP + Fraud Detection")
