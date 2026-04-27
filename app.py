@@ -15,19 +15,86 @@ st.set_page_config(
 )
 
 # ==================================================
-# STYLE
+# PREMIUM UI STYLE V2
 # ==================================================
 st.markdown("""
 <style>
+
+/* Main spacing */
 .block-container {
     padding-top: 1rem;
     padding-bottom: 2rem;
+    max-width: 1200px;
 }
+
+/* App background */
+.stApp {
+    background: linear-gradient(180deg,#f8fafc 0%, #eef2ff 100%);
+}
+
+/* Header Box */
+.hero-box {
+    background: linear-gradient(135deg,#0f172a,#1e3a8a);
+    padding: 28px;
+    border-radius: 22px;
+    color: white;
+    margin-bottom: 18px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+}
+
+/* Metric Cards */
 div[data-testid="stMetric"] {
-    background: #111827;
-    padding: 14px;
-    border-radius: 12px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    padding: 18px;
+    border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
 }
+
+/* Metric Label */
+div[data-testid="stMetricLabel"] {
+    color: #64748b !important;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+/* Metric Value */
+div[data-testid="stMetricValue"] {
+    color: #0f172a !important;
+    font-size: 34px !important;
+    font-weight: 800 !important;
+}
+
+/* Buttons */
+.stButton > button {
+    background: linear-gradient(135deg,#2563eb,#1d4ed8);
+    color: white;
+    border-radius: 14px;
+    height: 52px;
+    font-size: 18px;
+    font-weight: 700;
+    border: none;
+    width: 100%;
+}
+
+.stButton > button:hover {
+    background: linear-gradient(135deg,#1d4ed8,#1e40af);
+}
+
+/* Text area */
+textarea {
+    border-radius: 16px !important;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background: #0f172a;
+}
+
+section[data-testid="stSidebar"] * {
+    color: white !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -61,7 +128,7 @@ def risk_signals(text):
     t = text.lower()
     score = 0
     reasons = []
-    scam_type = "General Suspicious Message"
+    scam_type = "General Suspicious"
 
     if "otp" in t:
         score += 35
@@ -76,7 +143,7 @@ def risk_signals(text):
         if w in t:
             score += 22
             reasons.append(f"Account threat phrase: {w}")
-            scam_type = "Fake Bank Alert"
+            scam_type = "Fake Bank"
 
     phishing_terms = [
         "click now", "verify now", "login now",
@@ -85,8 +152,8 @@ def risk_signals(text):
     for w in phishing_terms:
         if w in t:
             score += 22
-            reasons.append(f"Phishing action phrase: {w}")
-            scam_type = "Phishing Scam"
+            reasons.append(f"Phishing phrase: {w}")
+            scam_type = "Phishing"
 
     job_terms = [
         "job", "work from home", "registration fee",
@@ -96,7 +163,7 @@ def risk_signals(text):
         if w in t:
             score += 28
             reasons.append(f"Fake job phrase: {w}")
-            scam_type = "Fake Job Offer"
+            scam_type = "Fake Job"
 
     prize_terms = ["winner", "claim prize", "reward", "lottery"]
     for w in prize_terms:
@@ -118,7 +185,7 @@ def risk_signals(text):
     urgency_terms = [
         "urgent", "immediately", "now",
         "15 mins", "within 15 mins",
-        "failure to respond", "act fast"
+        "failure to respond"
     ]
     for w in urgency_terms:
         if w in t:
@@ -126,15 +193,14 @@ def risk_signals(text):
             reasons.append(f"Urgency tactic: {w}")
 
     scare_terms = [
-        "unusual sign-in", "sign-in detected",
-        "security alert", "unauthorized access",
-        "detected from"
+        "unusual sign-in", "security alert",
+        "unauthorized access", "detected from"
     ]
     for w in scare_terms:
         if w in t:
             score += 24
             reasons.append(f"Security scare phrase: {w}")
-            scam_type = "Phishing Scam"
+            scam_type = "Phishing"
 
     links = extract_links(text)
     if links:
@@ -144,7 +210,7 @@ def risk_signals(text):
     if contains_unicode_spoof(text):
         score += 25
         reasons.append("Contains disguised Unicode characters")
-        scam_type = "Phishing Scam"
+        scam_type = "Phishing"
 
     brands = ["paypal", "skrill", "google", "apple", "amazon", "microsoft"]
     for brand in brands:
@@ -154,7 +220,7 @@ def risk_signals(text):
         ):
             score += 28
             reasons.append(f"Possible brand impersonation: {brand}")
-            scam_type = "Phishing Scam"
+            scam_type = "Phishing"
 
     return min(score, 100), reasons, scam_type
 
@@ -186,27 +252,6 @@ def risk_level(score):
         return "Medium Risk"
     return "Low Risk"
 
-def advice(level):
-    if level == "High Risk":
-        return [
-            "Do NOT click any links.",
-            "Do NOT share OTP/password.",
-            "Block sender immediately.",
-            "Use official websites only.",
-            "Change passwords if already interacted."
-        ]
-    elif level == "Medium Risk":
-        return [
-            "Verify sender identity.",
-            "Avoid sharing personal details.",
-            "Inspect links carefully."
-        ]
-    else:
-        return [
-            "No major threat detected.",
-            "Still stay cautious online."
-        ]
-
 # ==================================================
 # SIDEBAR
 # ==================================================
@@ -214,7 +259,7 @@ with st.sidebar:
     st.title("🛡️ TrustLens AI")
     st.caption("Digital Scam Protection")
 
-    st.markdown("### Covers")
+    st.markdown("### Protection Areas")
     st.write("• Phishing")
     st.write("• Fake Bank Alerts")
     st.write("• OTP Fraud")
@@ -223,14 +268,18 @@ with st.sidebar:
     st.write("• Investment Fraud")
 
 # ==================================================
-# HEADER
+# HERO
 # ==================================================
-st.title("🛡️ TrustLens AI")
-st.subheader("Detect scams in seconds. Stay safe online.")
-st.info("Paste suspicious text or upload screenshot below.")
+st.markdown("""
+<div class="hero-box">
+<h1>🛡️ TrustLens AI</h1>
+<h4>Detect scams in seconds. Stay safe online.</h4>
+<p>Paste suspicious messages or upload screenshots for AI-powered scam detection.</p>
+</div>
+""", unsafe_allow_html=True)
 
 # ==================================================
-# INPUT SECTION
+# INPUT
 # ==================================================
 left, right = st.columns(2)
 
@@ -269,7 +318,7 @@ if uploaded_file is not None:
 # ==================================================
 # ANALYZE
 # ==================================================
-if st.button("🚀 Scan for Threats", use_container_width=True):
+if st.button("🚀 Scan for Threats"):
 
     if user_text.strip() == "":
         st.warning("Please enter text or upload screenshot.")
@@ -295,7 +344,7 @@ if st.button("🚀 Scan for Threats", use_container_width=True):
             st.metric("Risk Level", level)
 
         with c:
-            st.metric("Detected Type", scam_type)
+            st.metric("Type", scam_type)
 
         st.progress(total)
 
@@ -307,11 +356,8 @@ if st.button("🚀 Scan for Threats", use_container_width=True):
             st.success("✅ Lower risk message")
 
         st.markdown("### Why It Was Flagged")
-        if reasons:
-            for r in reasons:
-                st.write("•", r)
-        else:
-            st.write("• No major suspicious signals found.")
+        for r in reasons:
+            st.write("•", r)
 
         links = extract_links(user_text)
         if links:
@@ -319,26 +365,12 @@ if st.button("🚀 Scan for Threats", use_container_width=True):
             for link in links:
                 st.code(link)
 
-        st.markdown("### Recommended Action")
-        for tip in advice(level):
-            st.write("•", tip)
-
         st.markdown("### AI Insight")
         st.caption(f"Model classified as: {ai_label} ({round(ai_conf*100)}% confidence)")
-
-# ==================================================
-# DEMO CASES
-# ==================================================
-st.markdown("---")
-st.markdown("### Try Demo Messages")
-
-st.code("URGENT! Your bank account is suspended. Verify now at http://bank-login-help.com")
-st.code("Congratulations! You are selected for a work from home job. Pay ₹999 registration fee now.")
-st.code("skrill-Alert: Unusual sign-in detected from Moscow. Secure your account immediately.")
 
 # ==================================================
 # FOOTER
 # ==================================================
 st.markdown("---")
-st.caption("TrustLens AI | Final OCR Stable Edition")
+st.caption("TrustLens AI | Premium UI V2")
 st.caption("Built with Streamlit + EasyOCR + NLP + Fraud Detection")
