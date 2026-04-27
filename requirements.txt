@@ -3,5 +3,6 @@ transformers
 torch
 sentencepiece
 pillow
-pytesseract
 easyocr
+numpy
+opencv-python-headless
