@@ -2,7 +2,7 @@ streamlit
 transformers
 torch
 sentencepiece
-pillow
 easyocr
-numpy
 opencv-python-headless
+pillow
+numpy
