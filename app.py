@@ -1,5 +1,8 @@
 import streamlit as st
 from transformers import pipeline
+import easyocr
+from PIL import Image
+import numpy as np
 import re
 
 # ==================================================
@@ -12,16 +15,16 @@ st.set_page_config(
 )
 
 # ==================================================
-# SIMPLE CLEAN CSS
+# STYLE
 # ==================================================
 st.markdown("""
 <style>
 .block-container {
-    padding-top: 1.2rem;
+    padding-top: 1rem;
     padding-bottom: 2rem;
 }
 div[data-testid="stMetric"] {
-    background-color: #111827;
+    background: #111827;
     padding: 14px;
     border-radius: 12px;
 }
@@ -29,7 +32,7 @@ div[data-testid="stMetric"] {
 """, unsafe_allow_html=True)
 
 # ==================================================
-# LOAD MODEL (STABLE)
+# LOAD MODELS
 # ==================================================
 @st.cache_resource
 def load_model():
@@ -38,7 +41,12 @@ def load_model():
         model="typeform/distilbert-base-uncased-mnli"
     )
 
+@st.cache_resource
+def load_reader():
+    return easyocr.Reader(['en'], gpu=False)
+
 classifier = load_model()
+reader = load_reader()
 
 # ==================================================
 # HELPERS
@@ -47,10 +55,7 @@ def extract_links(text):
     return re.findall(r"(https?://\S+|www\.\S+)", text)
 
 def contains_unicode_spoof(text):
-    for ch in text:
-        if ord(ch) > 127:
-            return True
-    return False
+    return any(ord(ch) > 127 for ch in text)
 
 def risk_signals(text):
     t = text.lower()
@@ -58,13 +63,11 @@ def risk_signals(text):
     reasons = []
     scam_type = "General Suspicious Message"
 
-    # OTP
     if "otp" in t:
         score += 35
         reasons.append("Requests OTP")
         scam_type = "OTP Fraud"
 
-    # Banking / Account Threat
     account_terms = [
         "bank", "account suspended", "account blocked",
         "freeze", "secure your account", "verify account"
@@ -75,7 +78,6 @@ def risk_signals(text):
             reasons.append(f"Account threat phrase: {w}")
             scam_type = "Fake Bank Alert"
 
-    # Phishing Actions
     phishing_terms = [
         "click now", "verify now", "login now",
         "reset password", "confirm identity"
@@ -86,7 +88,6 @@ def risk_signals(text):
             reasons.append(f"Phishing action phrase: {w}")
             scam_type = "Phishing Scam"
 
-    # Fake Jobs
     job_terms = [
         "job", "work from home", "registration fee",
         "joining fee", "pay fee"
@@ -97,17 +98,13 @@ def risk_signals(text):
             reasons.append(f"Fake job phrase: {w}")
             scam_type = "Fake Job Offer"
 
-    # Prize
-    prize_terms = [
-        "winner", "claim prize", "reward", "lottery"
-    ]
+    prize_terms = ["winner", "claim prize", "reward", "lottery"]
     for w in prize_terms:
         if w in t:
             score += 22
             reasons.append(f"Prize bait phrase: {w}")
             scam_type = "Prize Scam"
 
-    # Investment
     invest_terms = [
         "investment", "guaranteed return",
         "double your money", "daily profit"
@@ -118,7 +115,6 @@ def risk_signals(text):
             reasons.append(f"Investment fraud phrase: {w}")
             scam_type = "Investment Scam"
 
-    # Urgency
     urgency_terms = [
         "urgent", "immediately", "now",
         "15 mins", "within 15 mins",
@@ -129,7 +125,6 @@ def risk_signals(text):
             score += 16
             reasons.append(f"Urgency tactic: {w}")
 
-    # Security scare
     scare_terms = [
         "unusual sign-in", "sign-in detected",
         "security alert", "unauthorized access",
@@ -141,19 +136,16 @@ def risk_signals(text):
             reasons.append(f"Security scare phrase: {w}")
             scam_type = "Phishing Scam"
 
-    # Links
     links = extract_links(text)
     if links:
         score += 22
         reasons.append("Contains clickable link")
 
-    # Unicode spoof
     if contains_unicode_spoof(text):
         score += 25
         reasons.append("Contains disguised Unicode characters")
         scam_type = "Phishing Scam"
 
-    # Brand impersonation
     brands = ["paypal", "skrill", "google", "apple", "amazon", "microsoft"]
     for brand in brands:
         if brand in t and (
@@ -179,11 +171,9 @@ def ai_check(text):
 def final_score(rule_score, ai_label, ai_conf):
     score = rule_score
 
-    # If rules already strong, never downgrade
     if rule_score >= 70:
         score = max(score, 85)
 
-    # AI adds confidence
     if ai_label in ["fraudulent scam message", "phishing attempt"]:
         score += int(ai_conf * 15)
 
@@ -237,16 +227,44 @@ with st.sidebar:
 # ==================================================
 st.title("🛡️ TrustLens AI")
 st.subheader("Detect scams in seconds. Stay safe online.")
-st.info("Paste any suspicious SMS, email, or WhatsApp message below.")
+st.info("Paste suspicious text or upload screenshot below.")
 
 # ==================================================
-# INPUT
+# INPUT SECTION
 # ==================================================
-user_text = st.text_area(
-    "Paste suspicious message",
-    height=220,
-    placeholder="Example: Your account is suspended. Verify now..."
-)
+left, right = st.columns(2)
+
+with left:
+    user_text = st.text_area(
+        "Paste suspicious SMS / Email / WhatsApp message",
+        height=250
+    )
+
+with right:
+    uploaded_file = st.file_uploader(
+        "Upload Screenshot",
+        type=["png", "jpg", "jpeg"]
+    )
+
+# ==================================================
+# OCR
+# ==================================================
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded Screenshot", use_container_width=True)
+
+    img_array = np.array(image)
+
+    with st.spinner("Reading text from image..."):
+        results = reader.readtext(img_array)
+
+    extracted_text = " ".join([item[1] for item in results])
+
+    st.markdown("### Extracted Text")
+    st.code(extracted_text)
+
+    if extracted_text.strip():
+        user_text = extracted_text
 
 # ==================================================
 # ANALYZE
@@ -254,7 +272,7 @@ user_text = st.text_area(
 if st.button("🚀 Scan for Threats", use_container_width=True):
 
     if user_text.strip() == "":
-        st.warning("Please enter a message.")
+        st.warning("Please enter text or upload screenshot.")
     else:
         rule_score, reasons, scam_type = risk_signals(user_text)
 
@@ -268,15 +286,15 @@ if st.button("🚀 Scan for Threats", use_container_width=True):
         total = final_score(rule_score, ai_label, ai_conf)
         level = risk_level(total)
 
-        c1, c2, c3 = st.columns(3)
+        a, b, c = st.columns(3)
 
-        with c1:
+        with a:
             st.metric("Threat Score", f"{total}/100")
 
-        with c2:
+        with b:
             st.metric("Risk Level", level)
 
-        with c3:
+        with c:
             st.metric("Detected Type", scam_type)
 
         st.progress(total)
@@ -322,5 +340,5 @@ st.code("skrill-Alert: Unusual sign-in detected from Moscow. Secure your account
 # FOOTER
 # ==================================================
 st.markdown("---")
-st.caption("TrustLens AI | Stable Hosted Final Edition")
-st.caption("Built with Streamlit + NLP + Fraud Signal Detection")
+st.caption("TrustLens AI | Final OCR Stable Edition")
+st.caption("Built with Streamlit + EasyOCR + NLP + Fraud Detection")
